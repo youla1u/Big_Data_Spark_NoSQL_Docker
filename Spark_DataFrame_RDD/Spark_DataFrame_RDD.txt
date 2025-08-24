@@ -1,0 +1,155 @@
+#Lecture de fichier CSV
+
+# À entrer dans un terminal
+mkdir -p tpnum/data  # créer dossier tpnum et sous-dossier data
+# Téléchargements des fichiers
+wget -nc http://cedric.cnam.fr/vertigo/Cours/RCP216/docs/geysers.txt -P tpnum/data/
+wget -nc http://cedric.cnam.fr/vertigo/Cours/RCP216/docs/geyser.txt -P tpnum/data/
+wget -nc http://cedric.cnam.fr/vertigo/Cours/RCP216/docs/geyser.csv -P tpnum/data/
+wget -nc https://raw.githubusercontent.com/apache/spark/master/data/mllib/sample_libsvm_data.txt -P tpnum/data/
+
+
+
+
+geysercsvdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv", format="csv")
+geysercsvdf.printSchema()
+geysercsvdf.show(5)
+
+
+geysercsvdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv", format="csv", header = "true")
+geysercsvdf.printSchema()
+geysercsvdf.show(5)
+
+
+
+
+
+testdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.txt", format="csv", sep = " ")
+testdf.show(5)
+
+geysercsvdf.dtypes
+testdf.dtypes
+
+
+
+
+geysercsvdf = spark.read.option("header", True).option("inferSchema", True).csv("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv")
+geysercsvdf.dtypes
+
+testdf = spark.read.option("delimiter", " ").option("inferSchema", True).csv("/home/youla1u/TP_SPARK/tpnum/data/geyser.txt")
+testdf.dtypes
+
+
+
+geysercsvdf.describe().show()
+testdf.describe().show()
+
+
+
+
+geysercsvdf = spark.read.csv("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv")
+geysercsvdf.dtypes
+geysercsvdf.show(5)
+geysercsvdf.describe().show()
+
+
+
+
+#Lecture de vecteurs étiquetés (labeled points)
+
+libsvmdf = spark.read.format("libsvm").load("/home/youla1u/TP_SPARK/tpnum/data/sample_libsvm_data.txt")
+
+libsvmdf.printSchema()
+libsvmdf.show(5)
+libsvmdf.describe("label").show()
+
+
+
+
+libsvmdf = spark.read.format("libsvm").option("numFeatures","692").load("/home/youla1u/TP_SPARK/tpnum/data/sample_libsvm_data.txt")
+
+
+
+
+
+#Création de DataFrame à partir de RDD
+
+
+
+from pyspark.mllib.util import MLUtils
+
+sc = spark.sparkContext
+
+lignes = MLUtils.loadVectors(sc, "/home/youla1u/TP_SPARK/tpnum/data/geysers.txt")
+lignes.take(5)
+lignes.count()
+
+
+
+
+from pyspark.sql.types import DoubleType, StructType, StructField
+
+# Définition du schéma du DataFrame comme une chaîne de caractères
+chaineSchema = "duration interval"
+
+# Construction du schéma à partir de la chaîne de caractères
+champs = [StructField(field_name, DoubleType(), True) for field_name in chaineSchema.split()]
+schema = StructType(champs)
+
+# Construction d'un RDD de tuples à partir du RDD[Vector]
+lignesTuples = lignes.map(lambda p: (float(p[0]), float(p[1])))
+lignesTuples.take(5)
+
+# Construction du DataFrame à partir du RDD de tuples
+lignesdf = spark.createDataFrame(lignesTuples, schema)
+
+# Examen du DataFrame obtenu
+lignesdf.printSchema()
+lignesdf.show(5)
+
+# Calcul de statistiques pour les deux colonnes du DataFrame
+lignesdf.describe().show()
+
+
+
+
+
+
+donnees = sc.textFile("/home/youla1u/TP_SPARK/tpnum/data/geyser.txt")
+donnees.take(5)
+
+# Découpage de chaque ligne (séparateur espace ici), conversion de chaque partie, construction tuple
+lignes2 = donnees.map(lambda l: l.split(" ")).map(lambda p: (float(p[0]), float(p[1].strip())))
+
+# on devrait construire d'abord un RDD de tuples à partir de lignes2, or lignes2 est déjà un RDD de tuples
+lignesdf = spark.createDataFrame(lignes2, schema)
+
+lignesdf.printSchema()
+lignesdf.show(5)
+
+
+
+
+
+
+# Ecriture de DataFrame
+
+
+lignesdf.write.csv("/home/youla1u/TP_SPARK/tpnum/data/lignesdffichier", header=True)
+
+
+
+lignesdf.repartition(1).write.csv("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier", header=True)
+
+
+lignesdf.repartition(1).write.save("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier3", header=True, format="csv")
+lignesdf.repartition(1).write.format("com.databricks.spark.csv").option("header",True).save("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier4")
+
+
+
+lignesdf.repartition(1).write.mode("overwrite").csv("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier", header=True)
+
+
+
+
+#Sélection et manipulation de colonnes de DataFrame

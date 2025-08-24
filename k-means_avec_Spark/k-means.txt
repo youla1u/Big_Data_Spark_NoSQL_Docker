@@ -1,0 +1,78 @@
+# DESCRIPTION: L’objectif de ce TP est d'utiliser dans Spark la méthode de classification automatique k-means.
+
+
+# 1. Dans Bash, préparer le répertoire pour les données
+
+    mkdir -p tpkmeans/data
+    cd tpkmeans/data
+    ls 
+
+
+# 2. Sous spark-shell(en langage Scala) générer et sauvegarder les données dans tpkmeans/data
+
+  spark-shell # à exécuter dans Bash  
+
+  import spark.implicits._
+  import org.apache.spark.mllib.util.KMeansDataGenerator
+
+  // Générer les données
+  val donneesGenereesDF = KMeansDataGenerator.generateKMeansRDD(sc, 1000, 5, 2, 5, 1).map(l => (l(0), l(1))).toDF("x","y")
+  donneesGenereesDF.printSchema()
+  donneesGenereesDF.show(2)
+     
+  donneesGenereesDF.coalesce(1).write.format("com.databricks.spark.csv").option("header",true).save("/home/youla1u/tpkmeans/data/1000donneesKmeans2d5centres.csv")
+  
+
+# 3. Lecture des données générées dans un DataFrame 
+
+  pyspark # à exécuter dans Bash  
+
+  vecteursGroupesDF = spark.read.format("csv").option("header", True) \
+                         .option("inferSchema", True) \
+                         .load("/home/youla1u/tpkmeans/data/1000donneesKmeans2d5centres.csv") \
+                         .cache()
+  print(vecteursGroupesDF.dtypes)
+  vecteursGroupesDF.show(5)    # vérification
+
+
+
+# 4. Réalisation de K-Means
+
+  from pyspark.ml.linalg import Vectors
+  from pyspark.ml.feature import VectorAssembler
+
+  # Construction du VectorAssembler
+    assembleur = VectorAssembler().setInputCols(["x","y"]).setOutputCol("features")
+
+  # Construction du Dataframe spamDFA en appliquant le VectorAssembler
+    vecteursGroupesDFA = assembleur.transform(vecteursGroupesDF)
+    vecteursGroupesDFA.printSchema()
+    vecteursGroupesDFA.select("features").show(5)
+
+
+
+   # Appliquer k-means au DataFrame vecteursGroupesDFA
+
+     from pyspark.ml.clustering import KMeans
+
+     kmeans = KMeans().setK(5).setMaxIter(200).setSeed(100)
+     modele = kmeans.fit(vecteursGroupesDFA) 
+
+
+  # Trouver et aficher l'indice de groupe pour chaque donnée
+    resultats = modele.transform(vecteursGroupesDFA)
+    resultats.show(5) 
+ 
+
+  # Évaluer la classification par le coefficient de silhouette
+    from pyspark.ml.evaluation import ClusteringEvaluator
+    evaluateur = ClusteringEvaluator()
+    silhouette = evaluateur.evaluate(resultats)
+    print("Silhouette : " + str(silhouette))
+
+  # Afficher les centres des groupes
+    centres = modele.clusterCenters()
+    print("Centres : ")
+    for centre in modele.clusterCenters():
+        print(centre)  
+    

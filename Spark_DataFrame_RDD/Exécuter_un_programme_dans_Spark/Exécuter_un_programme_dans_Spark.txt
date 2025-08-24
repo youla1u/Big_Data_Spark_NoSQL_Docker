@@ -1,0 +1,33 @@
+# DESCRIPTION : Exécution d'un programme(SimpleProg.py) qui compte le nombre de lignes du fichier tpSparkPython.html qui contiennent « spark » et le nombre de lignes qui contiennent « sql ».
+
+
+
+# 1. Créer la structure des répertoires Dans ton Ubuntu
+
+mkdir -p /home/youla1u/TP_SPARK/tpnum/data
+
+
+
+# 2. Télécharger le fichier HTML (source de données)
+
+  cd /home/youla1u/TP_SPARK/tpnum
+
+  wget -nc http://cedric.cnam.fr/vertigo/Cours/RCP216/tpSparkPython.html -P data
+
+
+# 3. Copier le programme Python dans /home/youla1u/TP_SPARK/tpnum/
+     
+     cp /mnt/c/Users/cash0/OneDrive/Bureau/TP_Spark/Spark_and_Data/SimpleProg.py /home/youla1u/TP_SPARK/tpnum/
+
+     ls /home/youla1u/TP_SPARK/tpnum/
+
+
+# 4. Exécuter le programme avec Spark
+
+     cd /home/youla1u/TP_SPARK/tpnum
+
+
+     spark-submit --master local SimpleProg.py
+
+
+# 5. RESULTAT: on obtient [ Lignes avec spark : 13, lignes avec sql : 7 ] comme resultat
