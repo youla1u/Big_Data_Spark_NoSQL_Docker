@@ -1,1 +1,76 @@
- ##
+L’objectif de ce TP est de manipuler des données stockées dans une base Cassandra en utilisant Docker et Apache Spark pour effectuer des traitements distribués.
+
+
+1) Installation de Docker via le lien suivant: 
+   https://www.docker.com/products/docker-desktop. Il contient tous les composants nécessaires à l’utilisation de Docker.
+
+2) Lancer docker-desktop
+
+
+3) Installer un conteneur Cassandra avec Docker : 
+
+   docker run --name mon-cassandra -p 3000:9042  -d cassandra:latest
+
+4) Associer Spark et Cassandra : 
+   
+   pyspark --packages com.datastax.spark:spark-cassandra-connector_2.12:3.5.0
+
+5) Etablir une connexion avec Cassandra
+  
+   session = SparkSession.builder \
+        .appName("NFE204") \
+        .config("spark.cassandra.connection.host", "localhost") \
+        .config("spark.cassandra.connection.port", "3000") \
+        .config("spark.sql.extensions", "com.datastax.spark.connector.CassandraSparkExtensions") \
+        .getOrCreate()
+
+6) Afficher un extrait des restaurants:
+  
+   restaurants_df = session.read.format("org.apache.spark.sql.cassandra") \
+                .options(table="restaurant", keyspace="resto_ny") \
+                .load()
+   restaurants_df.show()
+
+
+7) Forcer la conservation du dataframe: 
+   
+   restaurants_df.cache()
+
+
+8) inspections_df = session.read.format("org.apache.spark.sql.cassandra") \
+                .options(table="inspection", keyspace="resto_ny") \
+                .load()
+
+
+
+                                         Traitements Spark/Cassandra
+
+
+1) La commande suivante ne conserve que trois colonnes: 
+
+   restaus_simples = restaurants_df.select("name", "phone", "cuisinetype")
+   restaus_simples.show()
+
+
+2) Effectue une sélection (avec le mot-clé filter, correspondant au where de SQL):
+
+   manhattan = restaurants_df.filter("borough =  'MANHATTAN'")
+   manhattan.show()
+
+3) Effectuer une opération de jointure:
+   
+   restaus_inspections = restaurants_df.join(inspections_df, restaurants_df.id == inspections_df.idrestaurant)
+   restaus_inspections.cache()
+
+4) Agrégation pour regrouper et compter des restaurants par arrondissement (borough):
+
+   comptage_par_borough = restaus_inspections.groupBy("borough").count()  
+
+5  Moyenne des notes des restaurants de tapas:
+
+   from pyspark.sql import functions as sf
+
+   comptage_tapas = restaurants_df.filter("cuisinetype > 'Tapas'") \
+        .join(inspections_df, restaurants_df.id == inspections_df.idrestaurant) \
+        .groupBy("name") \
+        .agg(sf.avg("score"))
