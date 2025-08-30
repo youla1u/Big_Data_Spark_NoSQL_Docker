@@ -23,6 +23,74 @@ L’objectif de ce TP est de manipuler des données stockées dans une base Cass
         .config("spark.cassandra.connection.port", "3000") \
         .config("spark.sql.extensions", "com.datastax.spark.connector.CassandraSparkExtensions") \
         .getOrCreate()
+#---------------------------------------------------------------------------------
+                 ##  Création de la base de données pour Cassandra  ##
+
+Les données à utiliser sont disponible ici: http://b3d.bdpedia.fr/files/restaurants.zip
+
+a) Création de la base de données nommée resto_NY 
+
+   CREATE KEYSPACE IF NOT EXISTS resto_NY
+      WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1};
+
+c) Sous csqlsh, sélectionner la base de données resto_NY,  afin de pouvoir faires des requêtes sur cette base de données
+
+   USE resto_NY;
+
+d) Création des tables (Column Family pour Cassandra) Restaurant et Inspection à partir du schéma suivant :
+
+-----------------------------------------------------------------------------
+ CREATE TABLE Restaurant (                                                     
+   id INT, Name VARCHAR, borough VARCHAR, BuildingNum VARCHAR, Street VARCHAR,
+   ZipCode INT, Phone text, CuisineType VARCHAR,
+   PRIMARY KEY ( id )
+ ) ;
+
+ CREATE INDEX fk_Restaurant_cuisine ON Restaurant ( CuisineType ) ;
+
+ CREATE TABLE Inspection (
+   idRestaurant INT, InspectionDate date, ViolationCode VARCHAR,
+   ViolationDescription VARCHAR, CriticalFlag VARCHAR, Score INT, GRADE VARCHAR,
+   PRIMARY KEY ( idRestaurant, InspectionDate )
+ ) ;
+
+CREATE INDEX fk_Inspection_Restaurant ON Inspection ( Grade ) ;
+----------------------------------------------------------------------------------
+
+c)  Vérifier si les tables ont bien été créées (sous cqlsh):
+    
+    DESC Restaurant;
+    DESC Inspection;
+
+d) Import les données dans ces tables: 
+
+   - Décompresser le fichier "restaurants.zip"
+
+     unzip restaurants.zip
+
+   - Dans la console (machine locale, pas docker), copier les fichiers sous « Docker » (container "Cassandra"):
+     
+     docker cp chemin_du_fichier/restaurants.csv    docker-container-ID:/
+     docker cp chemin_du_fichier/restaurants_inspections.csv    docker-container-ID:/ 
+
+e) Dans la console cqlsh, importer les fichiers "restaurants.csv" et "restaurants_inspections.csv"
+  
+   use resto_NY ;
+
+   COPY Restaurant (id, name, borough, buildingnum, street, zipcode, phone, cuisinetype)
+        FROM '/restaurants.csv' WITH DELIMITER=',';
+
+   COPY Inspection (idrestaurant, inspectiondate, violationcode, violationdescription, criticalflag, score, grade)
+        FROM '/restaurants_inspections.csv' WITH DELIMITER=',';
+
+
+f) Vérifier le contenu des tables:
+
+   SELECT count(*) FROM Restaurant;
+   SELECT count(*) FROM Inspection;
+#---------------------------------------------------------------------------------
+
+                        ## Revenons dans Spark ##
 
 6) Afficher un extrait des restaurants(après avoir charger les données):
   
