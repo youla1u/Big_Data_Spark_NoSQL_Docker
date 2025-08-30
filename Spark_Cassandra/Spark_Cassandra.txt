@@ -24,7 +24,7 @@ L’objectif de ce TP est de manipuler des données stockées dans une base Cass
         .config("spark.sql.extensions", "com.datastax.spark.connector.CassandraSparkExtensions") \
         .getOrCreate()
 
-6) Afficher un extrait des restaurants:
+6) Afficher un extrait des restaurants(après avoir charger les données):
   
    restaurants_df = session.read.format("org.apache.spark.sql.cassandra") \
                 .options(table="restaurant", keyspace="resto_ny") \
