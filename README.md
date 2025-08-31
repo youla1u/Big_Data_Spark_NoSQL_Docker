@@ -1,5 +1,8 @@
 # 🚀 TPs Big Data avec Spark, Cassandra & Docker
 
+## 👨‍💻 Auteur
+**Mohamed YOULA**
+
 ## 🎯 Objectif
 Ces travaux pratiques visent à travailler sur les trois axes suivants:
 1. Manipulation de fichiers et **DataFrames** avec **Spark**  
@@ -46,12 +49,9 @@ Ces travaux pratiques visent à travailler sur les trois axes suivants:
 
 ---
 
-## ✅ Résultats attendus
+## ✅ Connaissances acquises
 - Savoir lire/écrire différents formats de données avec Spark  
 - Connecter Spark à Cassandra et manipuler des données distribuées  
 - Appliquer un algorithme de **clustering** (K-Means) et évaluer ses performances  
 
 ---
-
-## 👨‍💻 Auteur
-Travaux réalisés dans le cadre d’un apprentissage pratique de **Spark** et **Big Data**.
