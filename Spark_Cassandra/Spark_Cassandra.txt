@@ -1,144 +1,185 @@
-L’objectif de ce TP est de manipuler des données stockées dans une base Cassandra en utilisant Docker et Apache Spark pour effectuer des traitements distribués.
+# =========================================================
+# Spark + Cassandra avec Docker : ingestion & traitements
+# =========================================================
 
+# 0) Objectif
+# ----------- 
+# Manipuler des données dans Cassandra via Docker et les traiter avec Spark
+# (Spark Cassandra Connector). Jeu de données : restaurants NYC.
 
-1) Installation de Docker via le lien suivant: 
-   https://www.docker.com/products/docker-desktop. Il contient tous les composants nécessaires à l’utilisation de Docker.
+# 1) Installation & démarrage Docker Desktop
+# ------------------------------------------
+# - Installer Docker Desktop (Windows/macOS) depuis : https://www.docker.com/products/docker-desktop
+# - Lancer Docker Desktop et vérifier qu’il tourne (docker info).
 
-2) Lancer docker-desktop
+# 2) Lancer un conteneur Cassandra
+# --------------------------------
+# - Démarre Cassandra exposé en local sur le port 3000 (mappé au 9042 interne).
+docker run --name mon-cassandra -p 3000:9042 -d cassandra:latest
 
+# - (Astuce) Suivre les logs de démarrage jusqu’au "Startup complete":
+#   docker logs -f mon-cassandra
 
-3) Installer un conteneur Cassandra avec Docker : 
+# 3) Associer Spark et Cassandra (shell PySpark)
+# ----------------------------------------------
+# - Lancer PySpark avec le connecteur DataStax (version compatible Spark 3.5.x).
+pyspark --packages com.datastax.spark:spark-cassandra-connector_2.12:3.5.0
 
-   docker run --name mon-cassandra -p 3000:9042  -d cassandra:latest
+# 4) Session Spark configurée pour Cassandra
+# ------------------------------------------
+# - Connexion au host local et au port mappé (3000).
+from pyspark.sql import SparkSession
+session = SparkSession.builder \
+    .appName("NFE204") \
+    .config("spark.cassandra.connection.host", "localhost") \
+    .config("spark.cassandra.connection.port", "3000") \
+    .config("spark.sql.extensions", "com.datastax.spark.connector.CassandraSparkExtensions") \
+    .getOrCreate()
 
-4) Associer Spark et Cassandra : 
-   
-   pyspark --packages com.datastax.spark:spark-cassandra-connector_2.12:3.5.0
+# -------------------------------------------------------------------------------
+#                ## Création & alimentation de la base Cassandra ##
+# -------------------------------------------------------------------------------
 
-5) Etablir une connexion avec Cassandra
-  
-   session = SparkSession.builder \
-        .appName("NFE204") \
-        .config("spark.cassandra.connection.host", "localhost") \
-        .config("spark.cassandra.connection.port", "3000") \
-        .config("spark.sql.extensions", "com.datastax.spark.connector.CassandraSparkExtensions") \
-        .getOrCreate()
-#---------------------------------------------------------------------------------
-                 ##  Création de la base de données pour Cassandra  ##
+# 5) Récupération des données
+# ---------------------------
+# - Télécharger l’archive des restaurants NYC puis la décompresser.
+#   (depuis la machine hôte)
+#   wget http://b3d.bdpedia.fr/files/restaurants.zip
+#   unzip restaurants.zip
 
-Les données à utiliser sont disponible ici: http://b3d.bdpedia.fr/files/restaurants.zip
+# 6) Accès au shell CQL (cqlsh)
+# -----------------------------
+# - Ouvrir cqlsh à l’intérieur du conteneur (utilise le port 9042 interne) :
+#   docker exec -it mon-cassandra cqlsh
+#   (ou depuis l’hôte : cqlsh 127.0.0.1 3000 si cqlsh est installé localement)
 
-a) Création de la base de données nommée resto_NY 
+# 7) Création du keyspace & sélection
+# -----------------------------------
+# - Keyspace mono-noeud (SimpleStrategy, RF=1) puis USE.
+CREATE KEYSPACE IF NOT EXISTS resto_NY
+  WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1 };
+USE resto_NY;
 
-   CREATE KEYSPACE IF NOT EXISTS resto_NY
-      WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1};
+# 8) Création des tables + index
+# ------------------------------
+# - Deux tables : Restaurant (clé primaire = id) et Inspection
+#   (clé primaire composite = (idRestaurant, InspectionDate)).
+CREATE TABLE Restaurant (
+  id INT, Name VARCHAR, borough VARCHAR, BuildingNum VARCHAR, Street VARCHAR,
+  ZipCode INT, Phone text, CuisineType VARCHAR,
+  PRIMARY KEY (id)
+);
+CREATE INDEX fk_Restaurant_cuisine ON Restaurant (CuisineType);
 
-c) Sous csqlsh, sélectionner la base de données resto_NY,  afin de pouvoir faires des requêtes sur cette base de données
+CREATE TABLE Inspection (
+  idRestaurant INT, InspectionDate date, ViolationCode VARCHAR,
+  ViolationDescription VARCHAR, CriticalFlag VARCHAR, Score INT, GRADE VARCHAR,
+  PRIMARY KEY (idRestaurant, InspectionDate)
+);
+CREATE INDEX fk_Inspection_Restaurant ON Inspection (Grade);
 
-   USE resto_NY;
+# 9) Vérifications de schéma (dans cqlsh)
+# ---------------------------------------
+DESC Restaurant;
+DESC Inspection;
 
-d) Création des tables (Column Family pour Cassandra) Restaurant et Inspection à partir du schéma suivant :
+# 10) Copier les fichiers CSV dans le conteneur
+# ---------------------------------------------
+# - Récupère l’ID du conteneur si besoin : docker ps
+# - Copie depuis l’hôte vers la racine du conteneur :
+docker cp chemin_du_fichier/restaurants.csv mon-cassandra:/
+docker cp chemin_du_fichier/restaurants_inspections.csv mon-cassandra:/
 
------------------------------------------------------------------------------
- CREATE TABLE Restaurant (                                                     
-   id INT, Name VARCHAR, borough VARCHAR, BuildingNum VARCHAR, Street VARCHAR,
-   ZipCode INT, Phone text, CuisineType VARCHAR,
-   PRIMARY KEY ( id )
- ) ;
+# 11) Import CSV -> Cassandra (dans cqlsh)
+# ----------------------------------------
+USE resto_NY;
 
- CREATE INDEX fk_Restaurant_cuisine ON Restaurant ( CuisineType ) ;
+COPY Restaurant (id, name, borough, buildingnum, street, zipcode, phone, cuisinetype)
+  FROM '/restaurants.csv' WITH DELIMITER=',';
 
- CREATE TABLE Inspection (
-   idRestaurant INT, InspectionDate date, ViolationCode VARCHAR,
-   ViolationDescription VARCHAR, CriticalFlag VARCHAR, Score INT, GRADE VARCHAR,
-   PRIMARY KEY ( idRestaurant, InspectionDate )
- ) ;
+COPY Inspection (idrestaurant, inspectiondate, violationcode, violationdescription, criticalflag, score, grade)
+  FROM '/restaurants_inspections.csv' WITH DELIMITER=',';
 
-CREATE INDEX fk_Inspection_Restaurant ON Inspection ( Grade ) ;
-----------------------------------------------------------------------------------
+# 12) Comptages rapides (contrôle de chargement)
+# ----------------------------------------------
+SELECT count(*) FROM Restaurant;
+SELECT count(*) FROM Inspection;
 
-c)  Vérifier si les tables ont bien été créées (sous cqlsh):
-    
-    DESC Restaurant;
-    DESC Inspection;
+# -------------------------------------------------------------------------------
+#                               ## Côté Spark ##
+# -------------------------------------------------------------------------------
 
-d) Import les données dans ces tables: 
+# 13) Charger les tables Cassandra en DataFrames Spark
+# ----------------------------------------------------
+restaurants_df = session.read.format("org.apache.spark.sql.cassandra") \
+    .options(table="restaurant", keyspace="resto_ny") \
+    .load()
+restaurants_df.show()        # aperçu
+restaurants_df.cache()       # 14) mise en cache pour réutilisations
+restaurants_df.count()       # matérialisation du cache (optionnel)
 
-   - Décompresser le fichier "restaurants.zip"
+inspections_df = session.read.format("org.apache.spark.sql.cassandra") \
+    .options(table="inspection", keyspace="resto_ny") \
+    .load()
 
-     unzip restaurants.zip
+# -------------------------------------------------------------------------------
+#                         ## Traitements Spark/Cassandra ##
+# -------------------------------------------------------------------------------
 
-   - Dans la console (machine locale, pas docker), copier les fichiers sous « Docker » (container "Cassandra"):
-     
-     docker cp chemin_du_fichier/restaurants.csv    docker-container-ID:/
-     docker cp chemin_du_fichier/restaurants_inspections.csv    docker-container-ID:/ 
+# 15) Projection de colonnes (équivalent SELECT col1,col2,...)
+# ------------------------------------------------------------
+restaus_simples = restaurants_df.select("name", "phone", "cuisinetype")
+restaus_simples.show()
 
-e) Dans la console cqlsh, importer les fichiers "restaurants.csv" et "restaurants_inspections.csv"
-  
-   use resto_NY ;
+# 16) Filtre (équivalent WHERE)
+# -----------------------------
+manhattan = restaurants_df.filter("borough = 'MANHATTAN'")
+manhattan.show()
 
-   COPY Restaurant (id, name, borough, buildingnum, street, zipcode, phone, cuisinetype)
-        FROM '/restaurants.csv' WITH DELIMITER=',';
+# 17) Jointure restaurants ↔ inspections
+# --------------------------------------
+from pyspark.sql import functions as F
+restaus_inspections = restaurants_df.join(
+    inspections_df,
+    restaurants_df.id == inspections_df.idrestaurant,
+    how="inner"
+)
+restaus_inspections.cache()
 
-   COPY Inspection (idrestaurant, inspectiondate, violationcode, violationdescription, criticalflag, score, grade)
-        FROM '/restaurants_inspections.csv' WITH DELIMITER=',';
+# 18) Agrégation : nombre de restaurants par borough
+# --------------------------------------------------
+comptage_par_borough = restaus_inspections.groupBy("borough").count()
+comptage_par_borough.show()
 
+# 19) Moyenne des scores pour les restaurants de TAPAS
+# ----------------------------------------------------
+# NOTE: le filtre dans l’énoncé utilise "cuisinetype > 'Tapas'", ce qui fait
+# une comparaison lexicographique. Pour sélectionner la cuisine "Tapas",
+# on préfère l’égalité (insensible à la casse si besoin).
+from pyspark.sql.functions import col, lower, avg
 
-f) Vérifier le contenu des tables:
+comptage_tapas = restaurants_df \
+    .filter(lower(col("cuisinetype")) == "tapas") \
+    .join(inspections_df, restaurants_df.id == inspections_df.idrestaurant, "inner") \
+    .groupBy("name") \
+    .agg(avg("score").alias("avg_score")) \
+    .orderBy(col("avg_score").asc_nulls_last())
 
-   SELECT count(*) FROM Restaurant;
-   SELECT count(*) FROM Inspection;
-#---------------------------------------------------------------------------------
+comptage_tapas.show(20, truncate=False)
 
-                        ## Revenons dans Spark ##
+# (Variante stricte, sans lower):
+# comptage_tapas = restaurants_df.filter("cuisinetype = 'Tapas'") \
+#   .join(inspections_df, restaurants_df.id == inspections_df.idrestaurant) \
+#   .groupBy("name").agg(F.avg("score").alias("avg_score"))
 
-6) Afficher un extrait des restaurants(après avoir charger les données):
-  
-   restaurants_df = session.read.format("org.apache.spark.sql.cassandra") \
-                .options(table="restaurant", keyspace="resto_ny") \
-                .load()
-   restaurants_df.show()
-
-
-7) Forcer la conservation du dataframe: 
-   
-   restaurants_df.cache()
-
-
-8) inspections_df = session.read.format("org.apache.spark.sql.cassandra") \
-                .options(table="inspection", keyspace="resto_ny") \
-                .load()
-
-
-
-                                         Traitements Spark/Cassandra
-
-
-1) La commande suivante ne conserve que trois colonnes: 
-
-   restaus_simples = restaurants_df.select("name", "phone", "cuisinetype")
-   restaus_simples.show()
-
-
-2) Effectue une sélection (avec le mot-clé filter, correspondant au where de SQL):
-
-   manhattan = restaurants_df.filter("borough =  'MANHATTAN'")
-   manhattan.show()
-
-3) Effectuer une opération de jointure:
-   
-   restaus_inspections = restaurants_df.join(inspections_df, restaurants_df.id == inspections_df.idrestaurant)
-   restaus_inspections.cache()
-
-4) Agrégation pour regrouper et compter des restaurants par arrondissement (borough):
-
-   comptage_par_borough = restaus_inspections.groupBy("borough").count()  
-
-5  Moyenne des notes des restaurants de tapas:
-
-   from pyspark.sql import functions as sf
-
-   comptage_tapas = restaurants_df.filter("cuisinetype > 'Tapas'") \
-        .join(inspections_df, restaurants_df.id == inspections_df.idrestaurant) \
-        .groupBy("name") \
-        .agg(sf.avg("score"))
+# -------------------------------------------------------------------------------
+# Remarques & bonnes pratiques
+# ----------------------------
+# - Cassandra : les imports COPY sont pratiques pour un unique nœud. Pour des
+#   volumes importants/cluster, préférer des outils dédiés (Spark, sstableloader).
+# - Index secondaires : utiles pour des requêtes ciblées mais à manier avec parcimonie.
+# - Spark cache() : toujours "réchauffer" le cache avec count()/show() si vous
+#   voulez bénéficier du caching dans les étapes suivantes.
+# - Jointures : en production, penser aux clés de partition et aux stratégies
+#   d’optimisation (broadcast join si petit DF, predicates pushdown, etc.).
+# =========================================================
