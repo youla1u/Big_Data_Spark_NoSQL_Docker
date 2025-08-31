@@ -1,7 +1,6 @@
 # 🚀 TPs Big Data avec Spark, Cassandra & Docker
 
-## 👨‍💻 Auteur
-**Mohamed YOULA**
+## 👨‍💻 Auteur: **Mohamed YOULA** 
 
 ## 🎯 Objectif
 Ces travaux pratiques visent à travailler sur les trois axes suivants:
