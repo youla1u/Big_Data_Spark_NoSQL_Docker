@@ -1,78 +1,114 @@
-# DESCRIPTION: L’objectif de ce TP est d'utiliser dans Spark la méthode de classification automatique k-means.
+# =========================================================
+# Classification non supervisée K-Means avec Spark
+# =========================================================
 
+# 0) Objectif
+# ----------- 
+# Utiliser Spark pour : générer un jeu de données 2D, le charger,
+# assembler les features, entraîner un modèle K-Means, évaluer la
+# qualité par silhouette et afficher les centres.
 
-# 1. Dans Bash, préparer le répertoire pour les données
+# 1) Préparer le répertoire de travail (Bash)
+# -------------------------------------------
+mkdir -p tpkmeans/data
+cd tpkmeans/data
+ls    # vérification
 
-    mkdir -p tpkmeans/data
-    cd tpkmeans/data
-    ls 
+# 2) Générer et sauvegarder des données (spark-shell / Scala)
+# -----------------------------------------------------------
+# - On utilise le générateur MLlib pour créer 1000 points 2D autour
+#   de 5 centres, puis on sauvegarde en CSV (1 fichier + en-tête).
+# - Lancer dans le terminal: spark-shell
+import spark.implicits._
+import org.apache.spark.mllib.util.KMeansDataGenerator
 
+// Génération (RDD[Vector]) -> DataFrame(x,y)
+val donneesGenereesDF =
+  KMeansDataGenerator
+    .generateKMeansRDD(sc, numPoints = 1000, k = 5, d = 2, r = 5, numPartitions = 1)
+    .map(v => (v(0), v(1))).toDF("x","y")
 
-# 2. Sous spark-shell(en langage Scala) générer et sauvegarder les données dans tpkmeans/data
+donneesGenereesDF.printSchema()
+donneesGenereesDF.show(2, truncate = false)
 
-  spark-shell # à exécuter dans Bash  
+// Sauvegarde en CSV (un seul fichier)
+donneesGenereesDF
+  .coalesce(1)
+  .write
+  .format("com.databricks.spark.csv")   // équivalent CSV ; on pourrait aussi faire .format("csv")
+  .option("header", true)
+  .mode("overwrite")
+  .save("/home/youla1u/tpkmeans/data/1000donneesKmeans2d5centres.csv")
 
-  import spark.implicits._
-  import org.apache.spark.mllib.util.KMeansDataGenerator
+// :quit pour sortir du spark-shell si besoin
 
-  // Générer les données
-  val donneesGenereesDF = KMeansDataGenerator.generateKMeansRDD(sc, 1000, 5, 2, 5, 1).map(l => (l(0), l(1))).toDF("x","y")
-  donneesGenereesDF.printSchema()
-  donneesGenereesDF.show(2)
-     
-  donneesGenereesDF.coalesce(1).write.format("com.databricks.spark.csv").option("header",true).save("/home/youla1u/tpkmeans/data/1000donneesKmeans2d5centres.csv")
-  
+# 3) Lecture du CSV en DataFrame (PySpark)
+# ----------------------------------------
+# - Lancer dans le terminal: pyspark
+vecteursGroupesDF = (spark.read.format("csv")
+    .option("header", True)
+    .option("inferSchema", True)
+    .load("/home/youla1u/tpkmeans/data/1000donneesKmeans2d5centres.csv")
+    .cache())
 
-# 3. Lecture des données générées dans un DataFrame 
+print(vecteursGroupesDF.dtypes)  # types inférés (x: double, y: double)
+vecteursGroupesDF.show(5)        # aperçu
 
-  pyspark # à exécuter dans Bash  
+# 4) Pipeline K-Means (assemblage -> entraînement -> prédiction -> évaluation)
+# ----------------------------------------------------------------------------
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.clustering import KMeans
+from pyspark.ml.evaluation import ClusteringEvaluator
+from pyspark.sql.functions import col
 
-  vecteursGroupesDF = spark.read.format("csv").option("header", True) \
-                         .option("inferSchema", True) \
-                         .load("/home/youla1u/tpkmeans/data/1000donneesKmeans2d5centres.csv") \
-                         .cache()
-  print(vecteursGroupesDF.dtypes)
-  vecteursGroupesDF.show(5)    # vérification
+# 4.1 Assembler les colonnes numériques en un seul vecteur "features"
+assembleur = (VectorAssembler()
+              .setInputCols(["x","y"])
+              .setOutputCol("features"))
 
+vecteursGroupesDFA = assembleur.transform(vecteursGroupesDF)
+vecteursGroupesDFA.printSchema()
+vecteursGroupesDFA.select("x","y","features").show(5, truncate=False)
 
+# 4.2 Entraîner K-Means (k=5, 200 itérations max, seed pour reproductibilité)
+kmeans = (KMeans()
+          .setK(5)
+          .setMaxIter(200)
+          .setSeed(100)
+          .setFeaturesCol("features")
+          .setPredictionCol("prediction"))
 
-# 4. Réalisation de K-Means
+modele = kmeans.fit(vecteursGroupesDFA)
 
-  from pyspark.ml.linalg import Vectors
-  from pyspark.ml.feature import VectorAssembler
+# 4.3 Affecter un cluster à chaque point
+resultats = modele.transform(vecteursGroupesDFA)  # ajoute la colonne "prediction"
+resultats.select("x","y","prediction").show(5)
 
-  # Construction du VectorAssembler
-    assembleur = VectorAssembler().setInputCols(["x","y"]).setOutputCol("features")
+# 4.4 Évaluer le clustering (coefficient de silhouette avec distance euclidienne)
+evaluateur = ClusteringEvaluator(featuresCol="features", predictionCol="prediction", metricName="silhouette")
+silhouette = evaluateur.evaluate(resultats)
+print("Silhouette :", silhouette)
 
-  # Construction du Dataframe spamDFA en appliquant le VectorAssembler
-    vecteursGroupesDFA = assembleur.transform(vecteursGroupesDF)
-    vecteursGroupesDFA.printSchema()
-    vecteursGroupesDFA.select("features").show(5)
+# (Optionnel) Coût d’entraînement (somme intra-cluster, plus petit = mieux)
+try:
+    cout = modele.summary.trainingCost
+    print("Training cost (WSSSE approx.) :", cout)
+except Exception as e:
+    print("Training cost non disponible sur cette version :", e)
 
+# 4.5 Centres des clusters
+print("Centres :")
+for centre in modele.clusterCenters():
+    print(centre)
 
+# 5) Bonnes pratiques / remarques
+# -------------------------------
+# - Le filtre lexicographique (ex: col > 'Tapas') n’a pas de sens pour un label
+#   catégoriel : toujours comparer par égalité, ou normaliser (lower/upper).
+# - Pour des données réelles, standardiser/normaliser les features avant K-Means.
+# - K (nombre de clusters) peut se choisir par silhouette moyenne ou “elbow”.
+# - cache() : matérialiser via count()/show() pour profiter du caching.
+# - Sauvegarde CSV : .format("csv") moderne est recommandé (com.databricks.spark.csv
+#   reste accepté mais historique).
+# =========================================================
 
-   # Appliquer k-means au DataFrame vecteursGroupesDFA
-
-     from pyspark.ml.clustering import KMeans
-
-     kmeans = KMeans().setK(5).setMaxIter(200).setSeed(100)
-     modele = kmeans.fit(vecteursGroupesDFA) 
-
-
-  # Trouver et aficher l'indice de groupe pour chaque donnée
-    resultats = modele.transform(vecteursGroupesDFA)
-    resultats.show(5) 
- 
-
-  # Évaluer la classification par le coefficient de silhouette
-    from pyspark.ml.evaluation import ClusteringEvaluator
-    evaluateur = ClusteringEvaluator()
-    silhouette = evaluateur.evaluate(resultats)
-    print("Silhouette : " + str(silhouette))
-
-  # Afficher les centres des groupes
-    centres = modele.clusterCenters()
-    print("Centres : ")
-    for centre in modele.clusterCenters():
-        print(centre)  
-    
