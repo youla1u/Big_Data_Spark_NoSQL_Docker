@@ -1,155 +1,143 @@
-#Lecture de fichier CSV
+# =========================================================
+# TP Spark — Lecture/écriture de fichiers et DataFrames
+# =========================================================
 
-# À entrer dans un terminal
-mkdir -p tpnum/data  # créer dossier tpnum et sous-dossier data
-# Téléchargements des fichiers
+# 1) Préparation des données locales
+# ---------------------------------
+# - Création d’un dossier de travail 'tpnum' avec un sous-dossier 'data'.
+# - Téléchargement de 4 fichiers d’exemples (txt/csv/libsvm) depuis le web.
+mkdir -p tpnum/data
 wget -nc http://cedric.cnam.fr/vertigo/Cours/RCP216/docs/geysers.txt -P tpnum/data/
 wget -nc http://cedric.cnam.fr/vertigo/Cours/RCP216/docs/geyser.txt -P tpnum/data/
 wget -nc http://cedric.cnam.fr/vertigo/Cours/RCP216/docs/geyser.csv -P tpnum/data/
 wget -nc https://raw.githubusercontent.com/apache/spark/master/data/mllib/sample_libsvm_data.txt -P tpnum/data/
 
-
-
-
+# 2) Lecture de CSV avec Spark (différentes variantes)
+# ----------------------------------------------------
+# - Lecture brute d’un CSV (sans en-tête, schéma par défaut en string), inspection du schéma et aperçu.
 geysercsvdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv", format="csv")
 geysercsvdf.printSchema()
 geysercsvdf.show(5)
 
-
-geysercsvdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv", format="csv", header = "true")
+# - Lecture avec en-tête (header=true) pour nommer les colonnes automatiquement.
+geysercsvdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv", format="csv", header="true")
 geysercsvdf.printSchema()
 geysercsvdf.show(5)
 
-
-
-
-
-testdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.txt", format="csv", sep = " ")
+# 3) Lecture d’un fichier texte "space-separated" comme CSV
+# ---------------------------------------------------------
+# - Spécification du séparateur " " pour parser un fichier texte en colonnes.
+testdf = spark.read.load("/home/youla1u/TP_SPARK/tpnum/data/geyser.txt", format="csv", sep=" ")
 testdf.show(5)
 
+# - Inspection des types de colonnes des deux DataFrames.
 geysercsvdf.dtypes
 testdf.dtypes
 
-
-
-
+# 4) Inférence de schéma automatique
+# ----------------------------------
+# - Lecture CSV avec header + inferSchema pour obtenir des types numériques quand c’est possible.
 geysercsvdf = spark.read.option("header", True).option("inferSchema", True).csv("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv")
 geysercsvdf.dtypes
 
+# - Lecture du TXT avec delimiter " " + inferSchema.
 testdf = spark.read.option("delimiter", " ").option("inferSchema", True).csv("/home/youla1u/TP_SPARK/tpnum/data/geyser.txt")
 testdf.dtypes
 
-
-
+# 5) Statistiques descriptives
+# ----------------------------
+# - Calcul d’indicateurs simples (count, mean, stddev, min, max) sur toutes les colonnes numériques.
 geysercsvdf.describe().show()
 testdf.describe().show()
 
-
-
-
+# 6) Autre façon de lire le CSV (API courte)
+# ------------------------------------------
+# - Lecture via spark.read.csv (par défaut tout est string si header/inferSchema non indiqués).
 geysercsvdf = spark.read.csv("/home/youla1u/TP_SPARK/tpnum/data/geyser.csv")
 geysercsvdf.dtypes
 geysercsvdf.show(5)
 geysercsvdf.describe().show()
 
-
-
-
-#Lecture de vecteurs étiquetés (labeled points)
-
+# 7) Lecture de vecteurs étiquetés (format LIBSVM)
+# ------------------------------------------------
+# - Chargement d’un dataset au format libsvm (colonne label + colonne features de type vector).
 libsvmdf = spark.read.format("libsvm").load("/home/youla1u/TP_SPARK/tpnum/data/sample_libsvm_data.txt")
 
+# - Inspection du schéma, aperçu des lignes, stats sur la colonne label.
 libsvmdf.printSchema()
 libsvmdf.show(5)
 libsvmdf.describe("label").show()
 
-
-
-
+# - Lecture avec option numFeatures explicite (utile si l’inférence ne suffit pas).
 libsvmdf = spark.read.format("libsvm").option("numFeatures","692").load("/home/youla1u/TP_SPARK/tpnum/data/sample_libsvm_data.txt")
 
-
-
-
-
-#Création de DataFrame à partir de RDD
-
-
-
+# 8) Création de DataFrame à partir d’un RDD (depuis un fichier de vecteurs)
+# --------------------------------------------------------------------------
+# - Utilisation de MLlib pour charger des vecteurs (RDD[Vector]).
 from pyspark.mllib.util import MLUtils
-
 sc = spark.sparkContext
-
 lignes = MLUtils.loadVectors(sc, "/home/youla1u/TP_SPARK/tpnum/data/geysers.txt")
-lignes.take(5)
-lignes.count()
+lignes.take(5)      # aperçu
+lignes.count()      # nombre de lignes
 
-
-
-
+# - Définition d’un schéma explicite pour le futur DataFrame.
 from pyspark.sql.types import DoubleType, StructType, StructField
-
-# Définition du schéma du DataFrame comme une chaîne de caractères
 chaineSchema = "duration interval"
-
-# Construction du schéma à partir de la chaîne de caractères
-champs = [StructField(field_name, DoubleType(), True) for field_name in chaineSchema.split()]
+champs = [StructField(n, DoubleType(), True) for n in chaineSchema.split()]
 schema = StructType(champs)
 
-# Construction d'un RDD de tuples à partir du RDD[Vector]
+# - Conversion RDD[Vector] -> RDD[tuple] (cast en float) puis création du DataFrame.
 lignesTuples = lignes.map(lambda p: (float(p[0]), float(p[1])))
 lignesTuples.take(5)
-
-# Construction du DataFrame à partir du RDD de tuples
 lignesdf = spark.createDataFrame(lignesTuples, schema)
 
-# Examen du DataFrame obtenu
+# - Vérification schéma/aperçu + stats descriptives.
 lignesdf.printSchema()
 lignesdf.show(5)
-
-# Calcul de statistiques pour les deux colonnes du DataFrame
 lignesdf.describe().show()
 
-
-
-
-
-
+# 9) Création d’un DataFrame à partir d’un RDD (depuis un texte brut)
+# -------------------------------------------------------------------
+# - Lecture du fichier texte brut sous forme de RDD de chaînes.
 donnees = sc.textFile("/home/youla1u/TP_SPARK/tpnum/data/geyser.txt")
 donnees.take(5)
 
-# Découpage de chaque ligne (séparateur espace ici), conversion de chaque partie, construction tuple
+# - Découpage par espace + conversion typée -> RDD de tuples (float, float).
 lignes2 = donnees.map(lambda l: l.split(" ")).map(lambda p: (float(p[0]), float(p[1].strip())))
 
-# on devrait construire d'abord un RDD de tuples à partir de lignes2, or lignes2 est déjà un RDD de tuples
+# - Construction directe du DataFrame à partir de l’RDD de tuples et du schéma défini plus haut.
 lignesdf = spark.createDataFrame(lignes2, schema)
-
 lignesdf.printSchema()
 lignesdf.show(5)
 
-
-
-
-
-
-# Ecriture de DataFrame
-
-
+# 10) Écriture de DataFrames sur disque (CSV)
+# -------------------------------------------
+# - Écriture simple (par défaut en plusieurs fichiers/partitions).
 lignesdf.write.csv("/home/youla1u/TP_SPARK/tpnum/data/lignesdffichier", header=True)
 
-
-
+# - Écriture en un seul fichier (repartition(1)) dans un nouveau dossier.
 lignesdf.repartition(1).write.csv("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier", header=True)
 
-
+# - Spécification explicite du format et du header via .save()
 lignesdf.repartition(1).write.save("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier3", header=True, format="csv")
+
+# - Utilisation de l’ancien package "com.databricks.spark.csv" (équivalent CSV) avec header.
 lignesdf.repartition(1).write.format("com.databricks.spark.csv").option("header",True).save("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier4")
 
-
-
+# - Réécriture en mode overwrite (remplace le répertoire de sortie si déjà présent).
 lignesdf.repartition(1).write.mode("overwrite").csv("/home/youla1u/TP_SPARK/tpnum/data/lignesDFfichier", header=True)
 
+# 11) (Mention) Sélection et manipulation de colonnes
+# ---------------------------------------------------
+# - Étape annoncée mais non détaillée dans le script partagé.
+# - Idées typiques : select(), withColumn(), filter(), groupBy(), agg(), cast(), rename, etc.
+#   Exemples (indicatifs) :
+#   lignesdf.select("duration").show()
+#   lignesdf.withColumn("ratio", col("duration")/col("interval")).show()
+#   lignesdf.filter(col("duration") > 2.0).count()
 
-
-
-#Sélection et manipulation de colonnes de DataFrame
+# =========================================================
+# Fin — Le script couvre : lecture multi-formats (csv/txt/libsvm),
+# inférence et schémas explicites, RDD -> DataFrame,
+# stats descriptives, et écritures CSV (mono/multiparts, overwrite).
+# =========================================================
