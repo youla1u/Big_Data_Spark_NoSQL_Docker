@@ -2,7 +2,7 @@
 
 ## 👨‍💻 Auteur: **Mohamed YOULA** 
 
-## 🎯 Objectif
+## 🎯 Objectif 
 Ces travaux pratiques visent à travailler sur les trois axes suivants:
 1. Manipulation de fichiers et **DataFrames** avec **Spark**   
 2. Intégration de **Spark** avec **Cassandra** via **Docker**  
