@@ -3,7 +3,7 @@
 ## 👨‍💻 Auteur: **Mohamed YOULA** 
 
 ## 🎯 Objectif 
-Ces travaux pratiques visent à travailler sur les trois axes suivants:
+Ces travaux pratiques visent à travailler sur les trois axes suivants: 
 1. Manipulation de fichiers et **DataFrames** avec **Spark**   
 2. Intégration de **Spark** avec **Cassandra** via **Docker**  
 3. Classification non supervisée avec **K-Means** (MLlib)
