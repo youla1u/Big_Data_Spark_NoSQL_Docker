@@ -1,8 +1,8 @@
-# 🚀 TPs Big Data avec Spark, Cassandra & Docker
+# TPs Big Data avec Spark, Cassandra & Docker
 
-## 👨‍💻 Auteur: **Mohamed YOULA** 
+## Auteur: **Mohamed YOULA** 
 
-## 🎯 Objectif 
+## Objectif 
 Ces travaux pratiques visent à travailler sur les trois axes suivants: 
 1. Manipulation de fichiers et **DataFrames** avec **Spark**    
 2. Intégration de **Spark** avec **Cassandra** via **Docker**  
@@ -10,7 +10,7 @@ Ces travaux pratiques visent à travailler sur les trois axes suivants:
 
 ---
 
-## 📌 Contenu
+## Contenu
 
 ### 1️⃣ TP Spark — Lecture & Écriture de DataFrames
 - Lecture de fichiers **CSV**, **TXT**, **LIBSVM**
@@ -40,7 +40,7 @@ Ces travaux pratiques visent à travailler sur les trois axes suivants:
 
 ---
 
-## 🛠️ Prérequis
+## Prérequis
 - **Apache Spark 3.x**
 - **Python (PySpark)** & **Scala**
 - **Docker Desktop**
@@ -48,7 +48,7 @@ Ces travaux pratiques visent à travailler sur les trois axes suivants:
 
 ---
 
-## ✅ Connaissances acquises
+## Connaissances acquises
 - Savoir lire/écrire différents formats de données avec Spark  
 - Connecter Spark à Cassandra et manipuler des données distribuées  
 - Appliquer un algorithme de **clustering** (K-Means) et évaluer ses performances  
